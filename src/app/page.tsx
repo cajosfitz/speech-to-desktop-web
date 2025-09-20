@@ -26,10 +26,7 @@ export default function Home() {
     const serverUrl = queryParams.get('server') || '';
     
     // 初始化 Socket.IO 客户端
-    socketRef.current = io(serverUrl, { 
-      path: '/api/socket',
-      transports: ['websocket'], // 【关键】强制前端只使用 WebSocket
-    });
+    socketRef.current = io("https://speech-to-desktop-server.onrender.com");
     
     socketRef.current.on('connect', () => {
       console.log('Socket.IO: Connected to server!');
