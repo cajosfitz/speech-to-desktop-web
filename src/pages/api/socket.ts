@@ -28,7 +28,8 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIO) => {
       cors: {
         origin: "*",
         methods: ["GET", "POST"]
-      }
+      },
+      transports: ['websocket', 'polling'], // 明确指定支援的协议
     });
 
     io.on('connection', (socket) => {
