@@ -2,11 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import io, { Socket } from 'socket.io-client';
-// 【最终修正】我们不再从函式库导入类型，因为它的类型定义不稳定
-// 直接使用 any 类型绕过 TypeScript 的检查，确保能通过编译
-import { Scanner } from '@yudiel/react-qr-scanner'; 
+import { Scanner } from '@yudiel/react-qr-scanner';
 
-// (自订 Window 类型不变)
 interface CustomWindow extends Window {
   SpeechRecognition: typeof SpeechRecognition;
   webkitSpeechRecognition: typeof SpeechRecognition;
@@ -16,34 +13,22 @@ export default function Home() {
   const [isPaired, setIsPaired] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState(''); // 这个状态可以移除，因为没有在 UI 中直接使用
   const socketRef = useRef<Socket | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
-    // 连接到我们部署在 Render 上的生产伺服器
     const SERVER_URL = "https://speech-to-desktop-server.onrender.com";
     socketRef.current = io(SERVER_URL);
 
     socketRef.current.on('connect', () => console.log('Socket.IO: Connected to server!'));
+    socketRef.current.on('pair-success', () => { setIsPaired(true); setIsScanning(false); });
+    socketRef.current.on('pair-fail', (msg) => { alert(`配对失败: ${msg}`); setIsScanning(false); });
 
-    socketRef.current.on('pair-success', (msg) => {
-      console.log('Pairing successful:', msg);
-      setIsPaired(true);
-      setIsScanning(false);
-    });
-    socketRef.current.on('pair-fail', (msg) => {
-      console.error('Pairing failed:', msg);
-      alert(`配对失败: ${msg}`);
-      setIsScanning(false);
-    });
-
-    // 初始化语音识别
     const SpeechRecognition = (window as unknown as CustomWindow).SpeechRecognition || (window as unknown as CustomWindow).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
-      recognition.interimResults = false; // 我们只关心最终结果
+      recognition.interimResults = false;
       recognition.lang = 'zh-TW';
 
       recognition.onstart = () => setIsListening(true);
@@ -57,7 +42,6 @@ export default function Home() {
           }
         }
         if (finalTranscript) {
-          console.log('Final result:', finalTranscript);
           socketRef.current?.emit('message-from-client', finalTranscript);
         }
       };
@@ -70,12 +54,10 @@ export default function Home() {
     };
   }, []);
 
-  // 【最终修正】明确地使用 any 类型来处理扫描结果，绕过不稳定的类型定义
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleScan = (result: any) => {
-    // 函式库可能回传字串，也可能回传物件，我们做兼容处理
     const scannedText = typeof result === 'string' ? result : result?.text;
     if (scannedText) {
-      console.log('Scanned Helper ID:', scannedText);
       socketRef.current?.emit('client-pair', scannedText);
     }
   };
@@ -90,20 +72,16 @@ export default function Home() {
     }
   };
 
-  // ----------------- UI 渲染逻辑 -----------------
-  
   if (isScanning) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-black text-white">
         <h1 className="text-2xl mb-4">请扫描电脑上的 QR Code</h1>
         <div className="w-full max-w-sm overflow-hidden rounded-lg">
-          {/* 【最终修正】使用最兼容的属性 onScan，并传递 handleScan */}
           <Scanner
             onScan={handleScan}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             onError={(error: any) => console.log(error?.message)}
-            styles={{
-              container: { width: '100%' }
-            }}
+            styles={{ container: { width: '100%' } }}
           />
         </div>
         <button onClick={() => setIsScanning(false)} className="mt-4 bg-gray-500 py-2 px-4 rounded">
