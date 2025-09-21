@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useRef } from 'react';
 import io, { Socket } from 'socket.io-client';
-import { Scanner } from '@yudiel/react-qr-scanner'; 
+import { Scanner } from '@yudiel/react-qr-scanner';
 
-// 自订 Window 类型，让 TypeScript 认识 SpeechRecognition
+// 自订 Window 类型
 interface CustomWindow extends Window {
-  SpeechRecognition: typeof SpeechRecognition;
-  webkitSpeechRecognition: typeof SpeechRecognition;
+  SpeechRecognition: new () => SpeechRecognition;
+  webkitSpeechRecognition: new () => SpeechRecognition;
 }
+declare var window: CustomWindow;
 
 export default function Home() {
   const [isPaired, setIsPaired] = useState(false);
@@ -18,62 +19,63 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
-    // 连接到我们部署在 Render 上的生产伺服器
+    // 检查 localStorage，恢复配对状态
+    if (localStorage.getItem('isPaired') === 'true') {
+      setIsPaired(true);
+    }
+    
     const SERVER_URL = "https://speech-to-desktop-server.onrender.com";
     socketRef.current = io(SERVER_URL);
-
     socketRef.current.on('connect', () => console.log('Socket.IO: Connected to server!'));
     
-    // 我们保留失败的回馈机制，以防万一
     socketRef.current.on('pair-fail', (msg) => {
       alert(`Pairing failed: ${msg}. Please refresh and try again.`);
-      setIsPaired(false); // 如果真的失败了，就退回到初始介面
+      localStorage.removeItem('isPaired'); // 配对失败，清除状态
+      setIsPaired(false);
     });
 
-    // 初始化语音识别
-    const SpeechRecognition = (window as unknown as CustomWindow).SpeechRecognition || (window as unknown as CustomWindow).webkitSpeechRecognition;
+    // 完整的语音识别初始化逻辑
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = false;
-      recognition.lang = 'en-US'; // 语言改为英文
+      recognition.lang = 'en-US';
 
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => setIsListening(false);
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => console.error('Speech Recognition Error:', event.error);
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             finalTranscript += event.results[i][0].transcript;
           }
         }
         if (finalTranscript) {
-          console.log('Final result:', finalTranscript);
           socketRef.current?.emit('message-from-client', finalTranscript);
         }
       };
       recognitionRef.current = recognition;
     }
 
-    // 组件卸载时的清理工作
     return () => {
       socketRef.current?.disconnect();
-      recognitionRef.current?.stop();
     };
   }, []);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleScan = (result: any) => {
-    const scannedText = typeof result === 'string' ? result : result?.text;
-    if (scannedText) {
-      console.log('Scanned Helper ID:', scannedText);
-      socketRef.current?.emit('client-pair', scannedText);
-      
-      // 乐观更新：立即跳转到麦克风介面
-      setIsScanning(false);
-      setIsPaired(true); 
+  const handleScan = (result: unknown) => {
+    const text = (result as { text: string })?.text || (typeof result === 'string' ? result : '');
+    if (text) {
+      socketRef.current?.emit('client-pair', text);
+      localStorage.setItem('isPaired', 'true');
+      window.location.reload();
     }
+  };
+
+  const handleDisconnect = () => {
+    localStorage.removeItem('isPaired');
+    window.location.reload();
   };
 
   const handleMicClick = () => {
@@ -86,25 +88,14 @@ export default function Home() {
     }
   };
 
-  // ----------------- UI 渲染逻辑 -----------------
-  
   if (isScanning) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-black text-white">
-        <h1 className="text-2xl mb-4">Scan the QR Code on your computer</h1>
+        <h1 className="text-2xl mb-4">Scan the QR Code</h1>
         <div className="w-full max-w-sm overflow-hidden rounded-lg">
-          <Scanner
-            onScan={handleScan}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            onError={(error: any) => console.log(error?.message)}
-            styles={{
-              container: { width: '100%' }
-            }}
-          />
+          <Scanner onScan={handleScan} />
         </div>
-        <button onClick={() => setIsScanning(false)} className="mt-4 bg-gray-500 py-2 px-4 rounded">
-          Cancel
-        </button>
+        <button onClick={() => setIsScanning(false)} className="mt-4 bg-gray-500 py-2 px-4 rounded">Cancel</button>
       </main>
     );
   }
@@ -113,6 +104,7 @@ export default function Home() {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-800 text-white">
         <h1 className="text-3xl font-bold mb-8">Voice Input Tool</h1>
+        {/* 麦克风按钮必须在这里！ */}
         <button
           onClick={handleMicClick}
           className={`w-24 h-24 rounded-full grid place-items-center transition-all duration-300 ${
@@ -126,6 +118,7 @@ export default function Home() {
             {isListening ? 'Listening...' : 'Paired! Press the button to start speaking'}
           </p>
         </div>
+        <button onClick={handleDisconnect} className="mt-8 bg-gray-600 text-white py-2 px-4 rounded">Disconnect</button>
       </main>
     );
   }
