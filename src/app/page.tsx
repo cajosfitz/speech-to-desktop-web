@@ -4,11 +4,12 @@ import { useEffect, useState, useRef } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
-// 自订 Window 类型
+// 自订 Window 类型，让 TypeScript 认识 SpeechRecognition
 interface CustomWindow extends Window {
   SpeechRecognition: new () => SpeechRecognition;
   webkitSpeechRecognition: new () => SpeechRecognition;
 }
+// 告诉 ESLint 检查员，我们知道自己在做什么
 // eslint-disable-next-line no-var
 declare var window: CustomWindow;
 
@@ -27,15 +28,16 @@ export default function Home() {
     
     const SERVER_URL = "https://speech-to-desktop-server.onrender.com";
     socketRef.current = io(SERVER_URL);
+
     socketRef.current.on('connect', () => console.log('Socket.IO: Connected to server!'));
     
     socketRef.current.on('pair-fail', (msg) => {
       alert(`Pairing failed: ${msg}. Please refresh and try again.`);
-      localStorage.removeItem('isPaired'); // 配对失败，清除状态
+      localStorage.removeItem('isPaired');
       setIsPaired(false);
     });
 
-    // 完整的语音识别初始化逻辑
+    // 初始化语音识别
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
@@ -65,12 +67,32 @@ export default function Home() {
     };
   }, []);
 
-  const handleScan = (result: unknown) => {
-    const text = (result as { text: string })?.text || (typeof result === 'string' ? result : '');
-    if (text) {
-      socketRef.current?.emit('client-pair', text);
-      localStorage.setItem('isPaired', 'true');
-      window.location.reload();
+  // 【ChatGPT 关键修正】
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleScan = (results: any) => {
+    console.log("Scanner raw results:", results);
+
+    // 检查它是不是一个阵列
+    if (Array.isArray(results) && results.length > 0) {
+      const scannedText = results[0]?.rawValue; // 从第一个结果中取出 rawValue
+
+      if (scannedText) {
+        console.log('Scanned Helper ID:', scannedText);
+        
+        if (socketRef.current) {
+          socketRef.current.emit('client-pair', scannedText);
+        }
+        
+        localStorage.setItem('isPaired', 'true');
+        window.location.reload();
+      }
+    } else if (typeof results === 'string') { // 兼容旧版可能直接回传字串的情况
+        console.log('Scanned Helper ID:', results);
+        if (socketRef.current) {
+          socketRef.current.emit('client-pair', results);
+        }
+        localStorage.setItem('isPaired', 'true');
+        window.location.reload();
     }
   };
 
@@ -92,9 +114,13 @@ export default function Home() {
   if (isScanning) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-black text-white">
-        <h1 className="text-2xl mb-4">Scan the QR Code</h1>
+        <h1 className="text-2xl mb-4">Scan the QR Code on your computer</h1>
         <div className="w-full max-w-sm overflow-hidden rounded-lg">
-          <Scanner onScan={handleScan} />
+          {/* 使用 onScan，因为它是向下兼容的 */}
+          <Scanner
+            onScan={handleScan}
+            styles={{ container: { width: '100%' } }}
+          />
         </div>
         <button onClick={() => setIsScanning(false)} className="mt-4 bg-gray-500 py-2 px-4 rounded">Cancel</button>
       </main>
@@ -105,7 +131,6 @@ export default function Home() {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-800 text-white">
         <h1 className="text-3xl font-bold mb-8">Voice Input Tool</h1>
-        {/* 麦克风按钮必须在这里！ */}
         <button
           onClick={handleMicClick}
           className={`w-24 h-24 rounded-full grid place-items-center transition-all duration-300 ${
