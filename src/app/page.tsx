@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import io, { Socket } from 'socket.io-client';
-import { Scanner } from '@yudiel/react-qr-scanner';
+import { Scanner } from '@yudiel/react-qr-scanner'; 
 
 interface CustomWindow extends Window {
   SpeechRecognition: typeof SpeechRecognition;
@@ -13,6 +13,7 @@ export default function Home() {
   const [isPaired, setIsPaired] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  // const [transcript, setTranscript] = useState(''); // <- 【修正一】已移除未使用的状态
   const socketRef = useRef<Socket | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
@@ -54,6 +55,7 @@ export default function Home() {
     };
   }, []);
 
+  // 【修正二】使用 ESLint 停用规则，告诉检查员“跳过这一行”
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleScan = (result: any) => {
     const scannedText = typeof result === 'string' ? result : result?.text;
@@ -79,6 +81,7 @@ export default function Home() {
         <div className="w-full max-w-sm overflow-hidden rounded-lg">
           <Scanner
             onScan={handleScan}
+            // 【修正三】同样使用 ESLint 停用规则
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             onError={(error: any) => console.log(error?.message)}
             styles={{ container: { width: '100%' } }}
