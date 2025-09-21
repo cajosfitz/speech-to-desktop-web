@@ -9,6 +9,7 @@ interface CustomWindow extends Window {
   SpeechRecognition: new () => SpeechRecognition;
   webkitSpeechRecognition: new () => SpeechRecognition;
 }
+// eslint-disable-next-line no-var
 declare var window: CustomWindow;
 
 export default function Home() {
