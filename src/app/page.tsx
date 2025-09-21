@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { Scanner } from '@yudiel/react-qr-scanner'; 
 
+// 自订 Window 类型，让 TypeScript 认识 SpeechRecognition
 interface CustomWindow extends Window {
   SpeechRecognition: typeof SpeechRecognition;
   webkitSpeechRecognition: typeof SpeechRecognition;
@@ -12,31 +13,24 @@ interface CustomWindow extends Window {
 export default function Home() {
   const [isPaired, setIsPaired] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [isPairing, setIsPairing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
+    // 连接到我们部署在 Render 上的生产伺服器
     const SERVER_URL = "https://speech-to-desktop-server.onrender.com";
     socketRef.current = io(SERVER_URL);
 
     socketRef.current.on('connect', () => console.log('Socket.IO: Connected to server!'));
-
-    socketRef.current.on('pair-success', (msg) => {
-      console.log('Pairing successful:', msg);
-      setIsPairing(false);
-      setIsPaired(true);
-    });
     
+    // 我们保留失败的回馈机制，以防万一
     socketRef.current.on('pair-fail', (msg) => {
-      console.error('Pairing failed:', msg);
-      alert(`Pairing failed: ${msg}. Please try again.`);
-      setIsScanning(false);
-      setIsPaired(false);
-      setIsPairing(false);
+      alert(`Pairing failed: ${msg}. Please refresh and try again.`);
+      setIsPaired(false); // 如果真的失败了，就退回到初始介面
     });
 
+    // 初始化语音识别
     const SpeechRecognition = (window as unknown as CustomWindow).SpeechRecognition || (window as unknown as CustomWindow).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
@@ -55,12 +49,14 @@ export default function Home() {
           }
         }
         if (finalTranscript) {
+          console.log('Final result:', finalTranscript);
           socketRef.current?.emit('message-from-client', finalTranscript);
         }
       };
       recognitionRef.current = recognition;
     }
 
+    // 组件卸载时的清理工作
     return () => {
       socketRef.current?.disconnect();
       recognitionRef.current?.stop();
@@ -70,11 +66,13 @@ export default function Home() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleScan = (result: any) => {
     const scannedText = typeof result === 'string' ? result : result?.text;
-    if (scannedText && !isPairing) {
+    if (scannedText) {
       console.log('Scanned Helper ID:', scannedText);
-      setIsScanning(false);
-      setIsPairing(true);
       socketRef.current?.emit('client-pair', scannedText);
+      
+      // 乐观更新：立即跳转到麦克风介面
+      setIsScanning(false);
+      setIsPaired(true); 
     }
   };
 
@@ -88,6 +86,8 @@ export default function Home() {
     }
   };
 
+  // ----------------- UI 渲染逻辑 -----------------
+  
   if (isScanning) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-black text-white">
@@ -97,21 +97,14 @@ export default function Home() {
             onScan={handleScan}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             onError={(error: any) => console.log(error?.message)}
-            styles={{ container: { width: '100%' } }}
+            styles={{
+              container: { width: '100%' }
+            }}
           />
         </div>
         <button onClick={() => setIsScanning(false)} className="mt-4 bg-gray-500 py-2 px-4 rounded">
           Cancel
         </button>
-      </main>
-    );
-  }
-
-  if (isPairing) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 text-white">
-        <h1 className="text-3xl font-bold animate-pulse">Pairing...</h1>
-        <p className="mt-2">Please wait</p>
       </main>
     );
   }
