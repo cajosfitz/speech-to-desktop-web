@@ -12,8 +12,8 @@ interface CustomWindow extends Window {
 export default function Home() {
   const [isPaired, setIsPaired] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [isPairing, setIsPairing] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  // const [transcript, setTranscript] = useState(''); // <- 【修正一】已移除未使用的状态
   const socketRef = useRef<Socket | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
@@ -22,15 +22,27 @@ export default function Home() {
     socketRef.current = io(SERVER_URL);
 
     socketRef.current.on('connect', () => console.log('Socket.IO: Connected to server!'));
-    socketRef.current.on('pair-success', () => { setIsPaired(true); setIsScanning(false); });
-    socketRef.current.on('pair-fail', (msg) => { alert(`配对失败: ${msg}`); setIsScanning(false); });
+
+    socketRef.current.on('pair-success', (msg) => {
+      console.log('Pairing successful:', msg);
+      setIsPairing(false);
+      setIsPaired(true);
+    });
+    
+    socketRef.current.on('pair-fail', (msg) => {
+      console.error('Pairing failed:', msg);
+      alert(`Pairing failed: ${msg}. Please try again.`);
+      setIsScanning(false);
+      setIsPaired(false);
+      setIsPairing(false);
+    });
 
     const SpeechRecognition = (window as unknown as CustomWindow).SpeechRecognition || (window as unknown as CustomWindow).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = false;
-      recognition.lang = 'zh-TW';
+      recognition.lang = 'en-US'; // 语言改为英文
 
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => setIsListening(false);
@@ -55,11 +67,13 @@ export default function Home() {
     };
   }, []);
 
-  // 【修正二】使用 ESLint 停用规则，告诉检查员“跳过这一行”
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleScan = (result: any) => {
     const scannedText = typeof result === 'string' ? result : result?.text;
-    if (scannedText) {
+    if (scannedText && !isPairing) {
+      console.log('Scanned Helper ID:', scannedText);
+      setIsScanning(false);
+      setIsPairing(true);
       socketRef.current?.emit('client-pair', scannedText);
     }
   };
@@ -77,19 +91,27 @@ export default function Home() {
   if (isScanning) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-black text-white">
-        <h1 className="text-2xl mb-4">请扫描电脑上的 QR Code</h1>
+        <h1 className="text-2xl mb-4">Scan the QR Code on your computer</h1>
         <div className="w-full max-w-sm overflow-hidden rounded-lg">
           <Scanner
             onScan={handleScan}
-            // 【修正三】同样使用 ESLint 停用规则
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             onError={(error: any) => console.log(error?.message)}
             styles={{ container: { width: '100%' } }}
           />
         </div>
         <button onClick={() => setIsScanning(false)} className="mt-4 bg-gray-500 py-2 px-4 rounded">
-          取消
+          Cancel
         </button>
+      </main>
+    );
+  }
+
+  if (isPairing) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 text-white">
+        <h1 className="text-3xl font-bold animate-pulse">Pairing...</h1>
+        <p className="mt-2">Please wait</p>
       </main>
     );
   }
@@ -97,7 +119,7 @@ export default function Home() {
   if (isPaired) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-800 text-white">
-        <h1 className="text-3xl font-bold mb-8">语音输入工具</h1>
+        <h1 className="text-3xl font-bold mb-8">Voice Input Tool</h1>
         <button
           onClick={handleMicClick}
           className={`w-24 h-24 rounded-full grid place-items-center transition-all duration-300 ${
@@ -108,7 +130,7 @@ export default function Home() {
         </button>
         <div className="mt-8 text-center h-20 w-full max-w-lg p-4 bg-gray-700 rounded-lg">
           <p className="text-lg text-gray-300">
-            {isListening ? '聆聽中...' : '配对成功！按下按钮开始说话'}
+            {isListening ? 'Listening...' : 'Paired! Press the button to start speaking'}
           </p>
         </div>
       </main>
@@ -117,9 +139,9 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-900 text-white">
-      <h1 className="text-4xl font-bold mb-8">语音输入工具</h1>
+      <h1 className="text-4xl font-bold mb-8">Voice Input Tool</h1>
       <button onClick={() => setIsScanning(true)} className="bg-green-500 hover:bg-green-600 font-bold py-4 px-8 rounded-lg text-2xl">
-        扫码连接电脑
+        Scan to Connect
       </button>
     </main>
   );
